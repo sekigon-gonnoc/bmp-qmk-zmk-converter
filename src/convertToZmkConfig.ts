@@ -560,69 +560,23 @@ function generateInfoJson(keyboardInfo: QmkKeyboardInfo): string {
       manufacturer: keyboardInfo.manufacturer || "Unknown",
       layouts: {
         LAYOUT: {
-          layout: [{ x: 0, y: 0, w: 1, h: 1 }]
+          layout: [{ x: 0, y: 0, w: 1, h: 1, row: 0, col: 0 }]
         }
       }
     }, null, 2);
   }
 
-  const isSplit = keyboardInfo.split?.enabled === true;
-  const matrixDims = getMatrixDimensions(keyboardInfo, true);
-
-  // Convert layout to the old QMK format with ZMK matrix coordinates
+  // Convert layout to the old QMK format with sequential row/col numbering
   const convertedLayout = layout.map((key, index) => {
-    const baseKey = {
+    return {
       x: key.x || 0,
       y: key.y || 0,
       w: key.w || 1,
       h: key.h || 1,
+      row: index, // Sequential row numbering (0, 1, 2, ...)
+      col: 0,     // All keys in column 0 for simplicity
       ...(key.r ? { r: key.r, rx: key.rx || key.x || 0, ry: key.ry || key.y || 0 } : {})
     };
-
-    // Add ZMK matrix coordinates
-    if (key.matrix) {
-      if (isSplit) {
-        // For split keyboards, determine which side and adjust columns for ZMK
-        const [qmkRow, qmkCol] = key.matrix;
-        const leftColMax = matrixDims.leftCols - 1;
-        
-        if (qmkCol <= leftColMax) {
-          // Left side - use original coordinates
-          return { ...baseKey, row: qmkRow, col: qmkCol };
-        } else {
-          // Right side - adjust column for ZMK (add left side columns)
-          return { ...baseKey, row: qmkRow, col: qmkCol };
-        }
-      } else {
-        // Unibody keyboard - use matrix coordinates directly
-        const [qmkRow, qmkCol] = key.matrix;
-        return { ...baseKey, row: qmkRow, col: qmkCol };
-      }
-    } else {
-      // No matrix info available, generate based on index
-      if (isSplit) {
-        // For split, estimate position based on layout order and total keys
-        const totalKeys = layout.length;
-        const midPoint = Math.ceil(totalKeys / 2);
-        
-        if (index < midPoint) {
-          // Left side
-          return { ...baseKey, row: Math.floor(index / matrixDims.leftCols), col: index % matrixDims.leftCols };
-        } else {
-          // Right side
-          const rightIndex = index - midPoint;
-          return { 
-            ...baseKey, 
-            row: Math.floor(rightIndex / matrixDims.rightCols), 
-            col: rightIndex % matrixDims.rightCols + matrixDims.leftCols 
-          };
-        }
-      } else {
-        // Unibody - estimate based on layout dimensions
-        const cols = matrixDims.cols;
-        return { ...baseKey, row: Math.floor(index / cols), col: index % cols };
-      }
-    }
   });
 
   // Create info.json structure
