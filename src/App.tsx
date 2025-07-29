@@ -255,42 +255,6 @@ function App() {
         </select>
         <button onClick={handleGenerateClick}>Generate</button>
       </div>
-      <div className="grid-row">
-        <textarea
-          value={vialJson}
-          onChange={handleVialTextAreaChange}
-          placeholder="vial.json"
-        ></textarea>
-      </div>
-      <div className="grid-row-2">
-        <button onClick={handleAppendBmpCustomKeycodesClick}>
-          Append BMP custom keycodes
-        </button>
-        <button onClick={handleDownloadVialJsonClick}>
-          Download vial.json
-        </button>
-      </div>
-      <div className="grid-row">
-        <textarea
-          value={configJson}
-          onChange={handleConfigTextAreaChange}
-          placeholder="config.json"
-        ></textarea>
-      </div>
-      <div className="grid-row-2">
-        <select value={configType} onChange={handleSelectConfigChange}>
-          <option value="">選択してください</option>
-          {Object.keys(configTypeList).map((item) => (
-            <option key={item} value={item}>
-              {item}
-            </option>
-          ))}
-        </select>
-        <button onClick={handleDownloadConfigJsonClick}>
-          Download config.json
-        </button>
-        <button onClick={handleDownloadClick}>Download config.bin</button>
-      </div>
     </div>
   );
 }

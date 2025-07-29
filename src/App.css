@@ -8,7 +8,7 @@
 .grid-container {
   margin: 2rem;
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: 1fr;
   grid-template-rows: 1fr auto;
   column-gap: 2em;
   row-gap: 1em;
