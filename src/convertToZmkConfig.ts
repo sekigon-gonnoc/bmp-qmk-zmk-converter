@@ -437,13 +437,13 @@ function generateZmkLayout(keyboardInfo: QmkKeyboardInfo): string {
 
   const keys = layout
     .map((key) => {
-      const x = (key.x || 0) * 100;
-      const y = (key.y || 0) * 100;
-      const w = (key.w || 1) * 100;
-      const h = (key.h || 1) * 100;
+      const x = (key.x || 0);
+      const y = (key.y || 0);
+      const w = (key.w || 1);
+      const h = (key.h || 1);
       const r = key.r || 0;
-      const rx = (key.rx || key.x || 0) * 100;
-      const ry = (key.ry || key.y || 0) * 100;
+      const rx = (key.rx || key.x || 0);
+      const ry = (key.ry || key.y || 0);
 
       if (r === 0) {
         return `<&key_physical_attrs ${c(w)} ${c(h)} ${c(x)} ${c(y)} 0 0 0>`;
