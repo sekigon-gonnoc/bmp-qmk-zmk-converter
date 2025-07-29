@@ -116,15 +116,36 @@ ${zmkConfig.isSplit ? `
 - boards/shields/${zmkConfig.normalizedName}/Kconfig.shield - Shield configuration
 - boards/shields/${zmkConfig.normalizedName}/${zmkConfig.normalizedName}.zmk.yml - ZMK metadata
 - config/keymap.keymap - Keymap definition
+- .github/workflows/build.yml - GitHub Actions workflow for building firmware
 
 ## Usage
 1. Copy the boards/shields/${zmkConfig.normalizedName}/ directory to your ZMK config
 2. Copy the config/keymap.keymap to your ZMK config
-3. Update your build configuration to include the new shield
-4. Customize the keymap as needed
+3. Copy the .github/workflows/build.yml to your ZMK config
+4. Update your build configuration to include the new shield
+5. Customize the keymap as needed
+6. Push to GitHub to trigger automatic firmware builds
 `;
 
       await zipWriter.add('README.md', new TextReader(readmeContent));
+      
+      // Add GitHub Actions workflow by fetching from public directory
+      try {
+        const buildYmlResponse = await fetch('build.yml');
+        const buildYmlContent = await buildYmlResponse.text();
+        await zipWriter.add('.github/workflows/build.yml', new TextReader(buildYmlContent));
+      } catch (error) {
+        console.warn('Failed to fetch build.yml, using fallback content');
+        await zipWriter.add(
+          '.github/workflows/build.yml',
+          new TextReader(`name: Build ZMK firmware
+on: [push, pull_request, workflow_dispatch]
+
+jobs:
+  build:
+    uses: zmkfirmware/zmk/.github/workflows/build-user-config.yml@main`)
+        );
+      }
       
       // Add shield files
       if (zmkConfig.isSplit) {
