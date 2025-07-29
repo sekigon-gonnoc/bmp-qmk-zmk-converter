@@ -121,7 +121,9 @@ ${zmkConfig.isSplit ? `
 - boards/shields/${zmkConfig.normalizedName}/Kconfig.defconfig - Default configuration
 - boards/shields/${zmkConfig.normalizedName}/Kconfig.shield - Shield configuration
 - boards/shields/${zmkConfig.normalizedName}/${zmkConfig.normalizedName}.zmk.yml - ZMK metadata
+- boards/shields/${zmkConfig.normalizedName}/${zmkConfig.normalizedName}.keymap - Shield keymap include
 - config/keymap.keymap - Keymap definition
+- config/info.json - Keyboard layout information for keymap editors
 - config/west.yml - West manifest for ZMK dependencies
 - build.yaml - Build configuration for ZMK
 - zephyr/module.yml - Zephyr module configuration
@@ -249,6 +251,10 @@ jobs:
       await zipWriter.add(
         'config/keymap.keymap',
         new TextReader(zmkConfig.keymap)
+      );
+      await zipWriter.add(
+        'config/info.json',
+        new TextReader(zmkConfig.infoJson)
       );
       
       // Generate and download the ZIP file

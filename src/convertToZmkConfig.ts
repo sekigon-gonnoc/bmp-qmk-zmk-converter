@@ -550,6 +550,101 @@ function generateZmkConfig(keyboardInfo: QmkKeyboardInfo, isSplit: boolean): str
   return config;
 }
 
+function generateInfoJson(keyboardInfo: QmkKeyboardInfo): string {
+  const layout = keyboardInfo.layouts ? Object.values(keyboardInfo.layouts)[0]?.layout : [];
+  
+  if (!layout || layout.length === 0) {
+    // Generate minimal info.json if no layout available
+    return JSON.stringify({
+      keyboard_name: keyboardInfo.keyboard_name || "unknown_keyboard",
+      manufacturer: keyboardInfo.manufacturer || "Unknown",
+      layouts: {
+        LAYOUT: {
+          layout: [{ x: 0, y: 0, w: 1, h: 1 }]
+        }
+      }
+    }, null, 2);
+  }
+
+  const isSplit = keyboardInfo.split?.enabled === true;
+  const matrixDims = getMatrixDimensions(keyboardInfo, true);
+
+  // Convert layout to the old QMK format with ZMK matrix coordinates
+  const convertedLayout = layout.map((key, index) => {
+    const baseKey = {
+      x: key.x || 0,
+      y: key.y || 0,
+      w: key.w || 1,
+      h: key.h || 1,
+      ...(key.r ? { r: key.r, rx: key.rx || key.x || 0, ry: key.ry || key.y || 0 } : {})
+    };
+
+    // Add ZMK matrix coordinates
+    if (key.matrix) {
+      if (isSplit) {
+        // For split keyboards, determine which side and adjust columns for ZMK
+        const [qmkRow, qmkCol] = key.matrix;
+        const leftColMax = matrixDims.leftCols - 1;
+        
+        if (qmkCol <= leftColMax) {
+          // Left side - use original coordinates
+          return { ...baseKey, row: qmkRow, col: qmkCol };
+        } else {
+          // Right side - adjust column for ZMK (add left side columns)
+          return { ...baseKey, row: qmkRow, col: qmkCol };
+        }
+      } else {
+        // Unibody keyboard - use matrix coordinates directly
+        const [qmkRow, qmkCol] = key.matrix;
+        return { ...baseKey, row: qmkRow, col: qmkCol };
+      }
+    } else {
+      // No matrix info available, generate based on index
+      if (isSplit) {
+        // For split, estimate position based on layout order and total keys
+        const totalKeys = layout.length;
+        const midPoint = Math.ceil(totalKeys / 2);
+        
+        if (index < midPoint) {
+          // Left side
+          return { ...baseKey, row: Math.floor(index / matrixDims.leftCols), col: index % matrixDims.leftCols };
+        } else {
+          // Right side
+          const rightIndex = index - midPoint;
+          return { 
+            ...baseKey, 
+            row: Math.floor(rightIndex / matrixDims.rightCols), 
+            col: rightIndex % matrixDims.rightCols + matrixDims.leftCols 
+          };
+        }
+      } else {
+        // Unibody - estimate based on layout dimensions
+        const cols = matrixDims.cols;
+        return { ...baseKey, row: Math.floor(index / cols), col: index % cols };
+      }
+    }
+  });
+
+  // Create info.json structure
+  const infoJson = {
+    keyboard_name: keyboardInfo.keyboard_name || "unknown_keyboard",
+    manufacturer: keyboardInfo.manufacturer || "Unknown",
+    maintainer: keyboardInfo.maintainer || "Unknown",
+    url: keyboardInfo.url || "",
+    bootloader: keyboardInfo.bootloader || "unknown",
+    processor: keyboardInfo.processor || "unknown",
+    diode_direction: keyboardInfo.diode_direction || "COL2ROW",
+    features: keyboardInfo.features || {},
+    layouts: {
+      LAYOUT: {
+        layout: convertedLayout
+      }
+    }
+  };
+
+  return JSON.stringify(infoJson, null, 2);
+}
+
 export interface ZmkConfigFiles {
   overlay_left?: string;
   overlay_right?: string;
@@ -557,6 +652,7 @@ export interface ZmkConfigFiles {
   layouts: string;
   keymap: string;
   shieldKeymap?: string;
+  infoJson: string;
   config_left?: string;
   config_right?: string;
   config?: string;
@@ -581,12 +677,14 @@ export function convertQmkToZmkConfig(infoJsonStr: string): ZmkConfigFiles {
   const layouts = generateZmkLayout(keyboardInfo);
   const keymap = generateZmkKeymap(keyboardInfo);
   const shieldKeymap = generateShieldKeymap();
+  const infoJson = generateInfoJson(keyboardInfo);
   const defConfigs = generateZmkDefConfig(keyboardName, isSplit);
   
   const result: ZmkConfigFiles = {
     layouts,
     keymap,
     shieldKeymap,
+    infoJson,
     defconfig: defConfigs.defconfig,
     configShield: defConfigs.configShield,
     zmkyml: defConfigs.zmkyml,
