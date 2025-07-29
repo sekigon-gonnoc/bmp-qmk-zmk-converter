@@ -190,11 +190,17 @@ jobs:
         ? `include:
   - board: ${selectedBoard}
     shield: ${zmkConfig.normalizedName}_left
+    snippet: studio-rpc-usb-uart
+    cmake-args: -DCONFIG_ZMK_STUDIO=y
   - board: ${selectedBoard}
-    shield: ${zmkConfig.normalizedName}_right`
+    shield: ${zmkConfig.normalizedName}_right
+    snippet: studio-rpc-usb-uart
+    cmake-args: -DCONFIG_ZMK_STUDIO=y`
         : `include:
   - board: ${selectedBoard}
-    shield: ${zmkConfig.normalizedName}`;
+    shield: ${zmkConfig.normalizedName}
+    snippet: studio-rpc-usb-uart
+    cmake-args: -DCONFIG_ZMK_STUDIO=y`;
 
       await zipWriter.add('build.yaml', new TextReader(buildYamlContent));
       
