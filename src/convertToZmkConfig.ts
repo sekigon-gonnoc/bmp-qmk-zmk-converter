@@ -9,6 +9,10 @@ interface QmkKeyboardInfo {
   bootloader?: string;
   processor?: string;
   diode_direction?: string;
+  matrix_size?: {
+    cols: number;
+    rows: number;
+  };
   features?: { [key: string]: boolean };
   matrix_pins?: {
     rows?: string[];
@@ -62,6 +66,184 @@ function qmkPinToZmkGpio(qmkPin: string): string {
   return `<&gpio0 0 GPIO_ACTIVE_HIGH>`;
 }
 
+function generateMatrixTransform(
+  layout: Array<{
+    matrix?: [number, number];
+    x?: number;
+    y?: number;
+    w?: number;
+    h?: number;
+  }>,
+  matrixInfo: {
+    rows: number;
+    cols: number;
+    totalRows: number;
+    totalCols: number;
+    isSplit: boolean;
+    isLeft: boolean;
+    leftCols: number;
+  }
+): string {
+  const { rows, cols, totalRows, totalCols, isSplit, isLeft, leftCols } = matrixInfo;
+
+  if (!layout || layout.length === 0) {
+    if (!isSplit) {
+      // Unibody keyboard - generate sequential matrix mapping
+      const defaultMap = [];
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          defaultMap.push(`RC(${r},${c})`);
+        }
+      }
+      
+      return `compatible = "zmk,matrix-transform";
+        columns = <${cols}>;
+        rows = <${rows}>;
+        map = <
+            ${defaultMap.join(" ")}
+        >;`;
+    } else {
+      // Split keyboard - use col-offset for right side
+      const colOffset = isLeft ? 0 : leftCols;
+      const defaultMap = [];
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          defaultMap.push(`RC(${r},${c})`);
+        }
+      }
+      
+      return `compatible = "zmk,matrix-transform";
+        columns = <${totalCols}>;
+        rows = <${totalRows}>;
+        map = <
+            ${defaultMap.join(" ")}
+        >;${colOffset > 0 ? `\n        col-offset = <${colOffset}>;` : ""}`;
+    }
+  }
+
+  if (!isSplit) {
+    // Unibody keyboard
+    const mapEntries = layout
+      .filter(key => key.matrix)
+      .map(key => `RC(${key.matrix![0]},${key.matrix![1]})`)
+      .join(" ");
+
+    return `compatible = "zmk,matrix-transform";
+        columns = <${cols}>;
+        rows = <${rows}>;
+        map = <
+            ${mapEntries}
+        >;`;
+  } else {
+    // Split keyboard
+    const validKeys = layout.filter(key => key.matrix);
+    
+    if (validKeys.length === 0) {
+      const colOffset = isLeft ? 0 : leftCols;
+      return `compatible = "zmk,matrix-transform";
+        columns = <${totalCols}>;
+        rows = <${totalRows}>;
+        map = <RC(0,0)>;${colOffset > 0 ? `\n        col-offset = <${colOffset}>;` : ""}`;
+    }
+
+    // For split keyboards, map keys using local matrix coordinates
+    // ZMK will handle the column offset automatically
+    const mapEntries = validKeys
+      .map(key => {
+        const [row, col] = key.matrix!;
+        return `RC(${row},${col})`;
+      })
+      .join(" ");
+
+    const colOffset = isLeft ? 0 : leftCols;
+
+    return `compatible = "zmk,matrix-transform";
+        columns = <${totalCols}>;
+        rows = <${totalRows}>;
+        map = <
+            ${mapEntries}
+        >;${colOffset > 0 ? `\n        col-offset = <${colOffset}>;` : ""}`;
+  }
+}
+
+function getMatrixDimensions(keyboardInfo: QmkKeyboardInfo, isLeft: boolean = true): {
+  rows: number;
+  cols: number;
+  totalRows: number;
+  totalCols: number;
+  leftCols: number;
+  rightCols: number;
+} {
+  // Get matrix dimensions from matrix_size if available
+  if (keyboardInfo.matrix_size) {
+    const { rows, cols } = keyboardInfo.matrix_size;
+    
+    if (!keyboardInfo.split?.enabled) {
+      // Unibody keyboard
+      return {
+        rows,
+        cols,
+        totalRows: rows,
+        totalCols: cols,
+        leftCols: cols,
+        rightCols: 0
+      };
+    } else {
+      // Split keyboard
+      // QMK concatenates split keyboards in row direction (doubling rows)
+      // ZMK concatenates in column direction (doubling columns)
+      
+      // For QMK split: total_rows = rows * 2, each side has 'rows' rows and 'cols' columns
+      // For ZMK split: total_cols = cols * 2, each side has 'rows' rows and 'cols' columns
+      const sideRows = rows / 2; // QMK doubles rows for split
+      const sideCols = cols; // Each side has full column count
+      
+      return {
+        rows: sideRows,
+        cols: sideCols,
+        totalRows: sideRows,
+        totalCols: sideCols * 2, // ZMK doubles columns for split
+        leftCols: sideCols,
+        rightCols: sideCols
+      };
+    }
+  }
+  
+  // Fallback to matrix_pins if matrix_size is not available
+  const leftPins = keyboardInfo.matrix_pins;
+  const rightPins = keyboardInfo.split?.matrix_pins?.right;
+  
+  if (!leftPins?.rows || !leftPins?.cols) {
+    throw new Error("Matrix dimensions not found in keyboard info");
+  }
+  
+  const leftRows = leftPins.rows.filter(pin => pin !== "NO_PIN").length;
+  const leftCols = leftPins.cols.filter(pin => pin !== "NO_PIN").length;
+  
+  if (!keyboardInfo.split?.enabled) {
+    return {
+      rows: leftRows,
+      cols: leftCols,
+      totalRows: leftRows,
+      totalCols: leftCols,
+      leftCols: leftCols,
+      rightCols: 0
+    };
+  }
+  
+  const rightRows = rightPins?.rows?.filter(pin => pin !== "NO_PIN").length || leftRows;
+  const rightCols = rightPins?.cols?.filter(pin => pin !== "NO_PIN").length || leftCols;
+  
+  return {
+    rows: isLeft ? leftRows : rightRows,
+    cols: isLeft ? leftCols : rightCols,
+    totalRows: Math.max(leftRows, rightRows),
+    totalCols: leftCols + rightCols,
+    leftCols: leftCols,
+    rightCols: rightCols
+  };
+}
+
 function generateZmkOverlay(
   keyboardInfo: QmkKeyboardInfo,
   isLeft: boolean = true,
@@ -89,9 +271,41 @@ function generateZmkOverlay(
 
   const hasPointingDevice = keyboardInfo.features?.pointing_device === true;
 
-  // Generate matrix transform
+  // Get matrix dimensions
+  const matrixDims = getMatrixDimensions(keyboardInfo, isLeft);
+  
+  // Generate matrix transform with proper split keyboard support
   const layout = keyboardInfo.layouts ? Object.values(keyboardInfo.layouts)[0]?.layout : [];
-  const matrixTransform = generateMatrixTransform(layout, matrixPins.rows.length, matrixPins.cols.length);
+  
+  // Filter layout for current side in split keyboard
+  let sideLayout = layout;
+  if (isSplit && layout.length > 0) {
+    // For split keyboards, filter keys based on matrix column ranges
+    const leftColMax = matrixDims.leftCols - 1;
+    
+    if (isLeft) {
+      sideLayout = layout.filter(key => 
+        key.matrix && key.matrix[1] <= leftColMax
+      );
+    } else {
+      sideLayout = layout.filter(key => 
+        key.matrix && key.matrix[1] > leftColMax
+      ).map(key => ({
+        ...key,
+        matrix: key.matrix ? [key.matrix[0], key.matrix[1] - matrixDims.leftCols] as [number, number] : undefined
+      }));
+    }
+  }
+
+  const matrixTransform = generateMatrixTransform(sideLayout, {
+    rows: matrixDims.rows,
+    cols: matrixDims.cols,
+    totalRows: matrixDims.totalRows,
+    totalCols: matrixDims.totalCols,
+    isSplit,
+    isLeft,
+    leftCols: matrixDims.leftCols
+  });
 
   let trackballConfig = "";
   if (hasPointingDevice) {
@@ -158,47 +372,6 @@ ${trackballConfig}
 };
 ${hasPointingDevice ? generateTrackballHardwareConfig() : ""}
 `;
-}
-
-function generateMatrixTransform(
-  layout: Array<{
-    matrix?: [number, number];
-    x?: number;
-    y?: number;
-    w?: number;
-    h?: number;
-  }>,
-  rows: number,
-  cols: number
-): string {
-  if (!layout || layout.length === 0) {
-    // Generate default matrix transform
-    const defaultMap = [];
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        defaultMap.push(`RC(${r},${c})`);
-      }
-    }
-    
-    return `compatible = "zmk,matrix-transform";
-        columns = <${cols}>;
-        rows = <${rows}>;
-        map = <
-            ${defaultMap.join(" ")}
-        >;`;
-  }
-
-  const mapEntries = layout
-    .filter(key => key.matrix)
-    .map(key => `RC(${key.matrix![0]},${key.matrix![1]})`)
-    .join(" ");
-
-  return `compatible = "zmk,matrix-transform";
-        columns = <${cols}>;
-        rows = <${rows}>;
-        map = <
-            ${mapEntries}
-        >;`;
 }
 
 function generateTrackballHardwareConfig(): string {
