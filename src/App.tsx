@@ -124,6 +124,7 @@ ${zmkConfig.isSplit ? `
 - config/keymap.keymap - Keymap definition
 - config/west.yml - West manifest for ZMK dependencies
 - build.yaml - Build configuration for ZMK
+- zephyr/module.yml - Zephyr module configuration
 - .github/workflows/build.yml - GitHub Actions workflow for building firmware
 
 ## Usage
@@ -174,6 +175,13 @@ jobs:
     path: config`;
 
       await zipWriter.add('config/west.yml', new TextReader(westYmlContent));
+      
+      // Add zephyr/module.yml
+      const moduleYmlContent = `build:
+  settings:
+    board_root: .`;
+
+      await zipWriter.add('zephyr/module.yml', new TextReader(moduleYmlContent));
       
       // Add build.yaml for ZMK build configuration with selected board
       const buildYamlContent = zmkConfig.isSplit
