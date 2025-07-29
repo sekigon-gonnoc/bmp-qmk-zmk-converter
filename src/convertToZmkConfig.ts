@@ -269,8 +269,6 @@ function generateZmkOverlay(
     .filter(gpio => gpio !== "")
     .join("\n\t\t\t,");
 
-  const hasPointingDevice = keyboardInfo.features?.pointing_device === true;
-
   // Get matrix dimensions
   const matrixDims = getMatrixDimensions(keyboardInfo, isLeft);
   
@@ -307,39 +305,8 @@ function generateZmkOverlay(
     leftCols: matrixDims.leftCols
   });
 
-  let trackballConfig = "";
-  if (hasPointingDevice) {
-    if (isSplit) {
-      trackballConfig = isLeft ? `
-    trackball_listener: trackball_listener {
-        compatible = "zmk,input-listener";
-        device = <&trackball>;
-        input-processors = <&zip_xy_transform (INPUT_TRANSFORM_X_INVERT | INPUT_TRANSFORM_Y_INVERT)>;
-    };` : `
-    split_inputs {
-        #address-cells = <1>;
-        #size-cells = <0>;
-
-        trackball_split: trackball_split@0 {
-            compatible = "zmk,input-split";
-            reg = <0>;
-            device = <&trackball>;
-        };
-    };`;
-    } else {
-      trackballConfig = `
-    trackball_listener: trackball_listener {
-        compatible = "zmk,input-listener";
-        device = <&trackball>;
-        input-processors = <&zip_xy_transform (INPUT_TRANSFORM_X_INVERT | INPUT_TRANSFORM_Y_INVERT)>;
-    };`;
-    }
-  }
-
   return `
 #include <dt-bindings/zmk/matrix_transform.h>
-#include <input/processors.dtsi>
-#include <dt-bindings/zmk/input_transform.h>
 #include "layouts.dtsi"
 
 / {
@@ -363,53 +330,11 @@ function generateZmkOverlay(
             = ${colGpios}
             ;
     };
-${trackballConfig}
 };
 
 &physical_layout0 {
     kscan = <&kscan0>;
     transform = <&default_transform>;
-};
-${hasPointingDevice ? generateTrackballHardwareConfig() : ""}
-`;
-}
-
-function generateTrackballHardwareConfig(): string {
-  return `
-&pinctrl {
-    spi0_default: spi0_default {
-        group1 {
-            psels = <NRF_PSEL(SPIM_SCK, 0, 12)>,
-                <NRF_PSEL(SPIM_MOSI, 1, 9)>,
-                <NRF_PSEL(SPIM_MISO, 1, 9)>;
-        };
-    };
-
-    spi0_sleep: spi0_sleep {
-        group1 {
-            psels = <NRF_PSEL(SPIM_SCK, 0, 12)>,
-                <NRF_PSEL(SPIM_MOSI, 1, 9)>,
-                <NRF_PSEL(SPIM_MISO, 1, 9)>;
-            low-power-enable;
-        };
-    };
-};
-
-&spi0 {
-    status = "okay";
-    compatible = "nordic,nrf-spim";
-    pinctrl-0 = <&spi0_default>;
-    pinctrl-1 = <&spi0_sleep>;
-    pinctrl-names = "default", "sleep";
-    cs-gpios = <&gpio0 13 GPIO_ACTIVE_LOW>;
-
-    trackball: trackball@0 {
-        status = "okay";
-        compatible = "pixart,paw3222";
-        reg = <0>;
-        spi-max-frequency = <2000000>;
-        irq-gpios = <&gpio0 15 GPIO_ACTIVE_LOW>;
-    };
 };
 `;
 }
@@ -559,13 +484,7 @@ ${isSplit ? `siblings:
 }
 
 function generateZmkConfig(keyboardInfo: QmkKeyboardInfo, isSplit: boolean): string {
-  const hasPointingDevice = keyboardInfo.features?.pointing_device === true;
-  
   let config = "CONFIG_ZMK_STUDIO_LOCKING=n";
-  
-  if (hasPointingDevice) {
-    config += "\nCONFIG_ZMK_POINTING=y\nCONFIG_PAW3222=y";
-  }
   
   if (isSplit) {
     config += "\nCONFIG_ZMK_SPLIT_ROLE_CENTRAL=y";
@@ -628,3 +547,22 @@ export function convertQmkToZmkConfig(infoJsonStr: string): ZmkConfigFiles {
   
   return result;
 }
+
+
+export interface ZmkConfigFiles {
+  overlay_left?: string;
+  overlay_right?: string;
+  overlay?: string;
+  layouts: string;
+  keymap: string;
+  config_left?: string;
+  config_right?: string;
+  config?: string;
+  defconfig: string;
+  configShield: string;
+  zmkyml: string;
+  keyboardName: string;
+  normalizedName: string;
+  isSplit: boolean;
+}
+
