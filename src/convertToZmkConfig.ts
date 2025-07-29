@@ -51,19 +51,67 @@ function normalizeKeyboardName(name: string): string {
   return name.toLowerCase().replace(/[^a-zA-Z0-9]/g, "_");
 }
 
-function qmkPinToZmkGpio(qmkPin: string): string {
-  // Convert QMK pin names to ZMK GPIO format
-  // This is a simplified conversion - you may need to adjust based on your specific hardware
-  if (qmkPin.startsWith("GP")) {
-    // For RP2040 GPIO pins
-    const pinNum = qmkPin.slice(2);
-    return `<&gpio0 ${pinNum} GPIO_ACTIVE_HIGH>`;
-  } else if (qmkPin === "NO_PIN") {
+function qmkPinToZmkGpio(qmkPin: string, isRow: boolean, diodeDirection: string): string {
+  const PIN_TABLE:{ [key: string]: [number, number] } = {
+    D3: [0, 8],
+    D2: [0,11],
+    D1: [0,18],
+    D0: [0,16],
+    D4: [0,19],
+    C6: [0,20],
+    D7: [0,22],
+    E6: [0,23],
+    B4: [1,0],
+    B5: [1,3],
+    B6: [0,19],
+    B2: [0,0],
+    B3: [1,15],
+    B1: [1,14],
+    F7: [0,3],
+    F6: [0,30],
+    F5: [0,0],
+    F4: [0,5],
+  };
+
+  if (qmkPin === "NO_PIN") {
     return ""; // Will be filtered out
   }
+
+  // Determine GPIO configuration based on row/column and diode direction
+  let gpioFlags = "";
   
-  // Default fallback for other pin formats
-  return `<&gpio0 0 GPIO_ACTIVE_HIGH>`;
+  if (diodeDirection === "COL2ROW") {
+    // COL2ROW: columns are driven, rows are sensed
+    if (isRow) {
+      // Rows need pull-down and are active high when key is pressed
+      gpioFlags = "(GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)";
+    } else {
+      // Columns are driven active high
+      gpioFlags = "GPIO_ACTIVE_HIGH";
+    }
+  } else { // ROW2COL
+    // ROW2COL: rows are driven, columns are sensed
+    if (isRow) {
+      // Rows are driven active high
+      gpioFlags = "GPIO_ACTIVE_HIGH";
+    } else {
+      // Columns need pull-down and are active high when key is pressed
+      gpioFlags = "(GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)";
+    }
+  }
+
+  if (PIN_TABLE[qmkPin] !== undefined) {
+    return `<&gpio${PIN_TABLE[qmkPin][0]} ${PIN_TABLE[qmkPin][1]} ${gpioFlags}>`;
+  }
+
+  // Handle GP pins for RP2040
+  if (qmkPin.startsWith("GP")) {
+    const pinNum = qmkPin.slice(2);
+    return `<&gpio0 ${pinNum} ${gpioFlags}>`;
+  }
+
+  // Default fallback
+  return `<&gpio0 0 ${gpioFlags}>`;
 }
 
 function generateMatrixTransform(
@@ -257,15 +305,17 @@ function generateZmkOverlay(
     throw new Error("Matrix pins not found in keyboard info");
   }
 
+  const diodeDirection = keyboardInfo.diode_direction || "COL2ROW";
+
   const rowGpios = matrixPins.rows
     .filter(pin => pin !== "NO_PIN")
-    .map(pin => qmkPinToZmkGpio(pin))
+    .map(pin => qmkPinToZmkGpio(pin, true, diodeDirection))
     .filter(gpio => gpio !== "")
     .join("\n\t\t\t,");
 
   const colGpios = matrixPins.cols
     .filter(pin => pin !== "NO_PIN")
-    .map(pin => qmkPinToZmkGpio(pin))
+    .map(pin => qmkPinToZmkGpio(pin, false, diodeDirection))
     .filter(gpio => gpio !== "")
     .join("\n\t\t\t,");
 
@@ -322,7 +372,7 @@ function generateZmkOverlay(
         compatible = "zmk,kscan-gpio-matrix";
         wakeup-source;
 
-        diode-direction = "${keyboardInfo.diode_direction === "ROW2COL" ? "row2col" : "col2row"}";
+        diode-direction = "${diodeDirection === "ROW2COL" ? "row2col" : "col2row"}";
         row-gpios
             = ${rowGpios}
             ;
