@@ -15,6 +15,7 @@ function App() {
   const [selectedKb, setSelectedKb] = useState("");
   const [filterText, setFilterText] = useState("");
   const [infoJson, setInfoJson] = useState("");
+  const [selectedBoard, setSelectedBoard] = useState<"ble_micro_pro" | "bmp_boost">("ble_micro_pro");
 
   useEffect(() => {
     if (keyboardList.length == 0) {
@@ -68,6 +69,10 @@ function App() {
     }
   };
 
+  const handleBoardChange = (board: "ble_micro_pro" | "bmp_boost") => {
+    setSelectedBoard(board);
+  };
+
   const handleGenerateClick = async () => {
     // Generate and automatically download ZMK config
     try {
@@ -97,6 +102,7 @@ Generated from QMK info.json
 - Name: ${zmkConfig.keyboardName}
 - Type: ${zmkConfig.isSplit ? 'Split' : 'Unibody'}
 - Normalized Name: ${zmkConfig.normalizedName}
+- Board: ${selectedBoard}
 
 ## Files Structure
 ${zmkConfig.isSplit ? `
@@ -116,15 +122,17 @@ ${zmkConfig.isSplit ? `
 - boards/shields/${zmkConfig.normalizedName}/Kconfig.shield - Shield configuration
 - boards/shields/${zmkConfig.normalizedName}/${zmkConfig.normalizedName}.zmk.yml - ZMK metadata
 - config/keymap.keymap - Keymap definition
+- config/west.yml - West manifest for ZMK dependencies
+- build.yaml - Build configuration for ZMK
 - .github/workflows/build.yml - GitHub Actions workflow for building firmware
 
 ## Usage
-1. Copy the boards/shields/${zmkConfig.normalizedName}/ directory to your ZMK config
-2. Copy the config/keymap.keymap to your ZMK config
-3. Copy the .github/workflows/build.yml to your ZMK config
-4. Update your build configuration to include the new shield
-5. Customize the keymap as needed
-6. Push to GitHub to trigger automatic firmware builds
+1. Copy all files to your ZMK config repository
+2. Customize the keymap in config/keymap.keymap as needed
+3. Push to GitHub to trigger automatic firmware builds
+
+## Board Information
+This configuration is set up for ${selectedBoard}. The board is from sekigon-gonnoc's repository.
 `;
 
       await zipWriter.add('README.md', new TextReader(readmeContent));
@@ -146,6 +154,39 @@ jobs:
     uses: zmkfirmware/zmk/.github/workflows/build-user-config.yml@main`)
         );
       }
+      
+      // Add ZMK west.yml configuration with sekigon-gonnoc remote
+      const westYmlContent = `manifest:
+  remotes:
+    - name: zmkfirmware
+      url-base: https://github.com/zmkfirmware
+    - name: sekigon-gonnoc
+      url-base: https://github.com/sekigon-gonnoc
+  projects:
+    - name: zmk
+      remote: zmkfirmware
+      revision: main
+      import: app/west.yml
+    - name: zmk-boards
+      remote: sekigon-gonnoc
+      revision: main
+  self:
+    path: config`;
+
+      await zipWriter.add('config/west.yml', new TextReader(westYmlContent));
+      
+      // Add build.yaml for ZMK build configuration with selected board
+      const buildYamlContent = zmkConfig.isSplit
+        ? `include:
+  - board: ${selectedBoard}
+    shield: ${zmkConfig.normalizedName}_left
+  - board: ${selectedBoard}
+    shield: ${zmkConfig.normalizedName}_right`
+        : `include:
+  - board: ${selectedBoard}
+    shield: ${zmkConfig.normalizedName}`;
+
+      await zipWriter.add('build.yaml', new TextReader(buildYamlContent));
       
       // Add shield files
       if (zmkConfig.isSplit) {
@@ -244,6 +285,29 @@ jobs:
             </option>
           ))}
         </select>
+        <div className="board-selection">
+          <label>Board:</label>
+          <label className="radio-label">
+            <input
+              type="radio"
+              name="board"
+              value="ble_micro_pro"
+              checked={selectedBoard === "ble_micro_pro"}
+              onChange={() => handleBoardChange("ble_micro_pro")}
+            />
+            BLE Micro Pro
+          </label>
+          <label className="radio-label">
+            <input
+              type="radio"
+              name="board"
+              value="bmp_boost"
+              checked={selectedBoard === "bmp_boost"}
+              onChange={() => handleBoardChange("bmp_boost")}
+            />
+            BMP Boost
+          </label>
+        </div>
         <button onClick={handleGenerateClick}>Generate</button>
       </div>
     </div>

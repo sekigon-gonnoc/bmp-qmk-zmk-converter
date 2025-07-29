@@ -90,6 +90,32 @@ input:hover {
   border-color: #646cff;
 }
 
+.board-selection {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.board-selection label {
+  font-weight: 500;
+  margin-right: 5px;
+}
+
+.radio-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 400 !important;
+  cursor: pointer;
+}
+
+.radio-label input[type="radio"] {
+  margin: 0;
+  padding: 0;
+  width: auto;
+  height: auto;
+}
+
 @media (prefers-color-scheme: light) {
   :root {
     color: #213547;
