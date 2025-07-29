@@ -243,6 +243,10 @@ jobs:
         new TextReader(zmkConfig.zmkyml)
       );
       await zipWriter.add(
+        `boards/shields/${zmkConfig.normalizedName}/${zmkConfig.normalizedName}.keymap`,
+        new TextReader(zmkConfig.shieldKeymap!)
+      );
+      await zipWriter.add(
         'config/keymap.keymap',
         new TextReader(zmkConfig.keymap)
       );

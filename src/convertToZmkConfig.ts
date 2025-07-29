@@ -484,6 +484,13 @@ function generateZmkKeymap(keyboardInfo: QmkKeyboardInfo): string {
 `;
 }
 
+function generateShieldKeymap(): string {
+  return `#include <behaviors.dtsi>
+#include <dt-bindings/zmk/keys.h>
+
+#include "../../../config/keymap.keymap"`;
+}
+
 function generateZmkDefConfig(keyboardName: string, isSplit: boolean): {
   defconfig: string;
   configShield: string;
@@ -549,6 +556,7 @@ export interface ZmkConfigFiles {
   overlay?: string;
   layouts: string;
   keymap: string;
+  shieldKeymap?: string;
   config_left?: string;
   config_right?: string;
   config?: string;
@@ -572,11 +580,13 @@ export function convertQmkToZmkConfig(infoJsonStr: string): ZmkConfigFiles {
   
   const layouts = generateZmkLayout(keyboardInfo);
   const keymap = generateZmkKeymap(keyboardInfo);
+  const shieldKeymap = generateShieldKeymap();
   const defConfigs = generateZmkDefConfig(keyboardName, isSplit);
   
   const result: ZmkConfigFiles = {
     layouts,
     keymap,
+    shieldKeymap,
     defconfig: defConfigs.defconfig,
     configShield: defConfigs.configShield,
     zmkyml: defConfigs.zmkyml,
@@ -597,22 +607,3 @@ export function convertQmkToZmkConfig(infoJsonStr: string): ZmkConfigFiles {
   
   return result;
 }
-
-
-export interface ZmkConfigFiles {
-  overlay_left?: string;
-  overlay_right?: string;
-  overlay?: string;
-  layouts: string;
-  keymap: string;
-  config_left?: string;
-  config_right?: string;
-  config?: string;
-  defconfig: string;
-  configShield: string;
-  zmkyml: string;
-  keyboardName: string;
-  normalizedName: string;
-  isSplit: boolean;
-}
-
