@@ -167,9 +167,9 @@ jobs:
       remote: zmkfirmware
       revision: main
       import: app/west.yml
-    - name: zmk-boards
+    - name: ${selectedBoard === "ble_micro_pro" ? "zmk-component-ble-micro-pro" : "zmk-component-bmp-boost"}
       remote: sekigon-gonnoc
-      revision: main
+      ${selectedBoard === "ble_micro_pro" ? "" : "import: west.yml"}
   self:
     path: config`;
 
