@@ -540,7 +540,7 @@ ${isSplit ? `siblings:
   };
 }
 
-function generateZmkConfig(keyboardInfo: QmkKeyboardInfo, isSplit: boolean): string {
+function generateZmkConfig(_keyboardInfo: QmkKeyboardInfo, isSplit: boolean): string {
   let config = "CONFIG_ZMK_STUDIO_LOCKING=n";
   
   if (isSplit) {
