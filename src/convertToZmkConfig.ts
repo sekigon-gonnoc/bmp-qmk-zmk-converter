@@ -167,7 +167,7 @@ function generateMatrixTransform(
 
     const mapEntries = layout
       .filter(key => key.matrix)
-      .map((key, index) => `RC(${index},0)`)
+      .map((index) => `RC(${index},0)`)
       .join(" ");
 
     return `compatible = "zmk,matrix-transform";
