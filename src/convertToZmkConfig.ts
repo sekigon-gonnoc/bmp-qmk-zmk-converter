@@ -17,6 +17,7 @@ interface QmkKeyboardInfo {
   matrix_pins?: {
     rows?: string[];
     cols?: string[];
+    direct?: string[];
   };
   split?: {
     enabled?: boolean;
@@ -24,6 +25,7 @@ interface QmkKeyboardInfo {
       right?: {
         rows?: string[];
         cols?: string[];
+        direct?: string[];
       };
     };
     serial?: {
@@ -51,7 +53,7 @@ function normalizeKeyboardName(name: string): string {
   return name.toLowerCase().replace(/[^a-zA-Z0-9]/g, "_");
 }
 
-function qmkPinToZmkGpio(qmkPin: string, isRow: boolean, diodeDirection: string): string {
+function qmkPinToZmkGpio(qmkPin: string, isRow: boolean = false, diodeDirection: string = ""): string {
   const PIN_TABLE:{ [key: string]: [number, number] } = {
     D3: [0, 8],
     D2: [0,11],
@@ -77,26 +79,29 @@ function qmkPinToZmkGpio(qmkPin: string, isRow: boolean, diodeDirection: string)
     return ""; // Will be filtered out
   }
 
-  // Determine GPIO configuration based on row/column and diode direction
-  let gpioFlags = "";
+  // For direct pins, use simple GPIO_ACTIVE_LOW configuration
+  let gpioFlags = "GPIO_ACTIVE_LOW";
   
-  if (diodeDirection === "COL2ROW") {
-    // COL2ROW: columns are driven, rows are sensed
-    if (isRow) {
-      // Rows need pull-down and are active high when key is pressed
-      gpioFlags = "(GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)";
-    } else {
-      // Columns are driven active high
-      gpioFlags = "GPIO_ACTIVE_HIGH";
-    }
-  } else { // ROW2COL
-    // ROW2COL: rows are driven, columns are sensed
-    if (isRow) {
-      // Rows are driven active high
-      gpioFlags = "GPIO_ACTIVE_HIGH";
-    } else {
-      // Columns need pull-down and are active high when key is pressed
-      gpioFlags = "(GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)";
+  // Only apply matrix-specific configuration if not direct pins
+  if (diodeDirection) {
+    if (diodeDirection === "COL2ROW") {
+      // COL2ROW: columns are driven, rows are sensed
+      if (isRow) {
+        // Rows need pull-down and are active high when key is pressed
+        gpioFlags = "(GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)";
+      } else {
+        // Columns are driven active high
+        gpioFlags = "GPIO_ACTIVE_HIGH";
+      }
+    } else { // ROW2COL
+      // ROW2COL: rows are driven, columns are sensed
+      if (isRow) {
+        // Rows are driven active high
+        gpioFlags = "GPIO_ACTIVE_HIGH";
+      } else {
+        // Columns need pull-down and are active high when key is pressed
+        gpioFlags = "(GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)";
+      }
     }
   }
 
@@ -130,9 +135,32 @@ function generateMatrixTransform(
     isSplit: boolean;
     isLeft: boolean;
     leftCols: number;
+    isDirect?: boolean;
   }
 ): string {
-  const { rows, cols, totalRows, totalCols, isSplit, isLeft, leftCols } = matrixInfo;
+  const { rows, cols, totalRows, totalCols, isSplit, isLeft, leftCols, isDirect } = matrixInfo;
+
+  if (isDirect) {
+    // For direct pins, create a simple linear mapping
+    if (!layout || layout.length === 0) {
+      return `compatible = "zmk,matrix-transform";
+        columns = <1>;
+        rows = <${rows}>;
+        map = <RC(0,0)>;`;
+    }
+
+    const mapEntries = layout
+      .filter(key => key.matrix)
+      .map((key, index) => `RC(${index},0)`)
+      .join(" ");
+
+    return `compatible = "zmk,matrix-transform";
+        columns = <1>;
+        rows = <${layout.length}>;
+        map = <
+            ${mapEntries}
+        >;`;
+  }
 
   if (!layout || layout.length === 0) {
     if (!isSplit) {
@@ -221,7 +249,41 @@ function getMatrixDimensions(keyboardInfo: QmkKeyboardInfo, isLeft: boolean = tr
   totalCols: number;
   leftCols: number;
   rightCols: number;
+  isDirect: boolean;
 } {
+  // Check for direct pins configuration
+  const leftDirectPins = keyboardInfo.matrix_pins?.direct;
+  const rightDirectPins = keyboardInfo.split?.matrix_pins?.right?.direct;
+  const isDirect = !!(leftDirectPins || rightDirectPins);
+
+  if (isDirect) {
+    // For direct pins, each pin is a separate "row" with 1 column
+    const leftPinCount = leftDirectPins ? leftDirectPins.flat().filter(pin => pin !== "NO_PIN").length : 0;
+    const rightPinCount = rightDirectPins ? rightDirectPins.flat().filter(pin => pin !== "NO_PIN").length : 0;
+    
+    if (!keyboardInfo.split?.enabled) {
+      return {
+        rows: leftPinCount,
+        cols: 1,
+        totalRows: leftPinCount,
+        totalCols: 1,
+        leftCols: 1,
+        rightCols: 0,
+        isDirect: true
+      };
+    }
+    
+    return {
+      rows: isLeft ? leftPinCount : rightPinCount,
+      cols: 1,
+      totalRows: Math.max(leftPinCount, rightPinCount),
+      totalCols: 2, // Each side has 1 column in ZMK split
+      leftCols: 1,
+      rightCols: 1,
+      isDirect: true
+    };
+  }
+
   // Get matrix dimensions from matrix_size if available
   if (keyboardInfo.matrix_size) {
     const { rows, cols } = keyboardInfo.matrix_size;
@@ -234,7 +296,8 @@ function getMatrixDimensions(keyboardInfo: QmkKeyboardInfo, isLeft: boolean = tr
         totalRows: rows,
         totalCols: cols,
         leftCols: cols,
-        rightCols: 0
+        rightCols: 0,
+        isDirect: false
       };
     } else {
       // Split keyboard
@@ -252,7 +315,8 @@ function getMatrixDimensions(keyboardInfo: QmkKeyboardInfo, isLeft: boolean = tr
         totalRows: sideRows,
         totalCols: sideCols * 2, // ZMK doubles columns for split
         leftCols: sideCols,
-        rightCols: sideCols
+        rightCols: sideCols,
+        isDirect: false
       };
     }
   }
@@ -275,7 +339,8 @@ function getMatrixDimensions(keyboardInfo: QmkKeyboardInfo, isLeft: boolean = tr
       totalRows: leftRows,
       totalCols: leftCols,
       leftCols: leftCols,
-      rightCols: 0
+      rightCols: 0,
+      isDirect: false
     };
   }
   
@@ -288,7 +353,8 @@ function getMatrixDimensions(keyboardInfo: QmkKeyboardInfo, isLeft: boolean = tr
     totalRows: Math.max(leftRows, rightRows),
     totalCols: leftCols + rightCols,
     leftCols: leftCols,
-    rightCols: rightCols
+    rightCols: rightCols,
+    isDirect: false
   };
 }
 
@@ -297,6 +363,83 @@ function generateZmkOverlay(
   isLeft: boolean = true,
   isSplit: boolean = false
 ): string {
+  // Check for direct pins first
+  const directPins = isLeft 
+    ? keyboardInfo.matrix_pins?.direct 
+    : (keyboardInfo.split?.matrix_pins?.right?.direct ?? keyboardInfo.matrix_pins?.direct);
+
+  if (directPins) {
+    // Generate direct pin configuration
+    const pins = directPins.flat().filter(pin => pin !== "NO_PIN");
+    const directGpios = pins
+      .map(pin => qmkPinToZmkGpio(pin))
+      .filter(gpio => gpio !== "")
+      .join("\n\t\t\t,");
+
+    // Get matrix dimensions
+    const matrixDims = getMatrixDimensions(keyboardInfo, isLeft);
+    
+    // Generate matrix transform for direct pins
+    const layout = keyboardInfo.layouts ? Object.values(keyboardInfo.layouts)[0]?.layout : [];
+    
+    // Filter layout for current side in split keyboard
+    let sideLayout = layout;
+    if (isSplit && layout.length > 0) {
+      const leftPinCount = keyboardInfo.matrix_pins?.direct
+        ? keyboardInfo.matrix_pins.direct
+            .flat()
+            .filter((pin) => pin !== "NO_PIN").length
+        : 0;
+      
+      if (isLeft) {
+        sideLayout = layout.slice(0, leftPinCount);
+      } else {
+        sideLayout = layout.slice(leftPinCount);
+      }
+    }
+
+    const matrixTransform = generateMatrixTransform(sideLayout, {
+      rows: matrixDims.rows,
+      cols: matrixDims.cols,
+      totalRows: matrixDims.totalRows,
+      totalCols: matrixDims.totalCols,
+      isSplit,
+      isLeft,
+      leftCols: matrixDims.leftCols,
+      isDirect: true
+    });
+
+    return `
+#include <dt-bindings/zmk/matrix_transform.h>
+#include "layouts.dtsi"
+
+/ {
+    chosen {
+        zmk,physical-layout = &physical_layout0;
+    };
+
+    default_transform: keymap_transform_0 {
+        ${matrixTransform}
+    };
+
+    kscan0: kscan {
+        compatible = "zmk,kscan-gpio-direct";
+        toggle-mode;
+
+        input-gpios
+            = ${directGpios}
+            ;
+    };
+};
+
+&physical_layout0 {
+    kscan = <&kscan0>;
+    transform = <&default_transform>;
+};
+`;
+  }
+
+  // Existing matrix pin configuration
   const matrixPins = isLeft 
     ? keyboardInfo.matrix_pins 
     : (keyboardInfo.split?.matrix_pins?.right ?? keyboardInfo.matrix_pins);
