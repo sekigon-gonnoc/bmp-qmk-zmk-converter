@@ -19,6 +19,13 @@ interface QmkKeyboardInfo {
     cols?: string[];
     direct?: string[];
   };
+  encoder?: {
+    rotary?: Array<{
+      pin_a: string;
+      pin_b: string;
+      resolution?: number;
+    }>;
+  };
   split?: {
     enabled?: boolean;
     matrix_pins?: {
@@ -26,6 +33,15 @@ interface QmkKeyboardInfo {
         rows?: string[];
         cols?: string[];
         direct?: string[];
+      };
+    };
+    encoder?: {
+      right?: {
+        rotary?: Array<{
+          pin_a: string;
+          pin_b: string;
+          resolution?: number;
+        }>;
       };
     };
     serial?: {
@@ -358,6 +374,58 @@ function getMatrixDimensions(keyboardInfo: QmkKeyboardInfo, isLeft: boolean = tr
   };
 }
 
+function generateEncoderConfig(
+  keyboardInfo: QmkKeyboardInfo,
+  isLeft: boolean = true,
+): string {
+  const encoders = isLeft 
+    ? keyboardInfo.encoder?.rotary 
+    : (keyboardInfo.split?.encoder?.right?.rotary ?? keyboardInfo.encoder?.rotary);
+
+  if (!encoders || encoders.length === 0) {
+    return "";
+  }
+
+  const encoderConfigs = encoders.map((encoder, index) => {
+    const pinA = qmkPinToZmkGpio(encoder.pin_a);
+    const pinB = qmkPinToZmkGpio(encoder.pin_b);
+    const resolution = encoder.resolution || 4;
+
+    return `    encoder_${index}: encoder_${index} {
+        compatible = "alps,ec11";
+        a-gpios = ${pinA};
+        b-gpios = ${pinB};
+        steps = <${resolution}>;
+        status = "okay";
+    };`;
+  }).join("\n\n");
+
+  return encoderConfigs;
+}
+
+function generateSensorConfig(
+  keyboardInfo: QmkKeyboardInfo,
+  isLeft: boolean = true
+): string {
+  const encoders = isLeft 
+    ? keyboardInfo.encoder?.rotary 
+    : (keyboardInfo.split?.encoder?.right?.rotary ?? keyboardInfo.encoder?.rotary);
+
+  if (!encoders || encoders.length === 0) {
+    return "";
+  }
+
+  const sensorMappings = `<${encoders
+    .map((_, index) => `&encoder_${index}`)
+    .join(" ")}>`;
+
+  return `
+    sensors: sensors {
+        sensors = ${sensorMappings};
+        status = "okay";
+    };`;
+}
+
 function generateZmkOverlay(
   keyboardInfo: QmkKeyboardInfo,
   isLeft: boolean = true,
@@ -367,6 +435,10 @@ function generateZmkOverlay(
   const directPins = isLeft 
     ? keyboardInfo.matrix_pins?.direct 
     : (keyboardInfo.split?.matrix_pins?.right?.direct ?? keyboardInfo.matrix_pins?.direct);
+
+  // Generate encoder configuration
+  const encoderConfig = generateEncoderConfig(keyboardInfo, isLeft);
+  const sensorConfig = generateSensorConfig(keyboardInfo, isLeft);
 
   if (directPins) {
     // Generate direct pin configuration
@@ -430,6 +502,8 @@ function generateZmkOverlay(
             = ${directGpios}
             ;
     };
+${encoderConfig}
+${sensorConfig}
 };
 
 &physical_layout0 {
@@ -523,6 +597,8 @@ function generateZmkOverlay(
             = ${colGpios}
             ;
     };
+${encoderConfig}
+${sensorConfig}
 };
 
 &physical_layout0 {
@@ -582,7 +658,7 @@ function generateZmkLayout(keyboardInfo: QmkKeyboardInfo): string {
             ;
     };
 };
-    `;
+`;
 }
 
 function generateZmkKeymap(keyboardInfo: QmkKeyboardInfo): string {
@@ -590,6 +666,18 @@ function generateZmkKeymap(keyboardInfo: QmkKeyboardInfo): string {
   const keyCount = layout.length || 1;
   
   const bindings = Array(keyCount).fill("&none").join(" ");
+
+  // Check for encoders and generate sensor bindings
+  const leftEncoders = keyboardInfo.encoder?.rotary || [];
+  const rightEncoders = keyboardInfo.split?.encoder?.right?.rotary || [];
+  const totalEncoders = leftEncoders.length + rightEncoders.length;
+  
+  let sensorBindings = "";
+  if (totalEncoders > 0) {
+    const encoderBindings = Array(totalEncoders * 2).fill("&inc_dec_kp C_VOL_UP C_VOL_DN").join(" ");
+    sensorBindings = `
+            sensor-bindings = <${encoderBindings}>;`;
+  }
 
   return `
 #include <behaviors.dtsi>
@@ -602,25 +690,25 @@ function generateZmkKeymap(keyboardInfo: QmkKeyboardInfo): string {
         layer_0 {
             bindings = <
                 ${bindings}
-            >;
+            >;${sensorBindings}
         };
 
         layer_1 {
             bindings = <
                 ${bindings}
-            >;
+            >;${sensorBindings}
         };
 
         layer_2 {
             bindings = <
                 ${bindings}
-            >;
+            >;${sensorBindings}
         };
 
         layer_3 {
             bindings = <
                 ${bindings}
-            >;
+            >;${sensorBindings}
         };
     };
 };
@@ -683,8 +771,32 @@ ${isSplit ? `siblings:
   };
 }
 
-function generateZmkConfig(_keyboardInfo: QmkKeyboardInfo, isSplit: boolean): string {
+function generateZmkConfig(keyboardInfo: QmkKeyboardInfo, isSplit: boolean, isLeft?: boolean): string {
   let config = "CONFIG_ZMK_STUDIO_LOCKING=n";
+  
+  // Check for encoders based on split configuration and side
+  let hasEncoders = false;
+  
+  if (isSplit && isLeft !== undefined) {
+    // Split keyboard - check encoders for specific side
+    if (isLeft) {
+      const leftEncoders = keyboardInfo.encoder?.rotary || [];
+      hasEncoders = leftEncoders.length > 0;
+    } else {
+      const rightEncoders = keyboardInfo.split?.encoder?.right?.rotary || [];
+      hasEncoders = rightEncoders.length > 0;
+    }
+  } else {
+    // Unibody keyboard - check all encoders
+    const leftEncoders = keyboardInfo.encoder?.rotary || [];
+    const rightEncoders = keyboardInfo.split?.encoder?.right?.rotary || [];
+    hasEncoders = leftEncoders.length > 0 || rightEncoders.length > 0;
+  }
+  
+  if (hasEncoders) {
+    config += "\nCONFIG_EC11=y";
+    config += "\nCONFIG_EC11_TRIGGER_GLOBAL_THREAD=y";
+  }
   
   if (isSplit) {
     config += "\nCONFIG_ZMK_SPLIT_ROLE_CENTRAL=y";
@@ -793,8 +905,8 @@ export function convertQmkToZmkConfig(infoJsonStr: string): ZmkConfigFiles {
   if (isSplit) {
     result.overlay_left = generateZmkOverlay(keyboardInfo, true, true);
     result.overlay_right = generateZmkOverlay(keyboardInfo, false, true);
-    result.config_left = generateZmkConfig(keyboardInfo, true);
-    result.config_right = generateZmkConfig(keyboardInfo, false);
+    result.config_left = generateZmkConfig(keyboardInfo, true, true);
+    result.config_right = generateZmkConfig(keyboardInfo, true, false);
   } else {
     result.overlay = generateZmkOverlay(keyboardInfo, true, false);
     result.config = generateZmkConfig(keyboardInfo, false);
